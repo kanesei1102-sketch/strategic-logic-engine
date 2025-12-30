@@ -1,98 +1,187 @@
 import streamlit as st
 from openai import OpenAI
 from tavily import TavilyClient
-import streamlit.components.v1 as components
-import re
+import graphviz
 
-# --- 1. 初期設定 ---
-st.set_page_config(page_title="Strategic Logic Engine", layout="wide")
+# --- 初期設定 ---
+st.set_page_config(page_title="Strategic Knowledge Architecture", layout="wide")
+
+# Secretsの確認
+if "OPENAI_API_KEY" not in st.secrets or "TAVILY_API_KEY" not in st.secrets:
+    st.error("Secrets (OPENAI_API_KEY / TAVILY_API_KEY) を設定してください。")
+    st.stop()
 
 tavily = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-if "analysis_raw" not in st.session_state:
-    st.session_state.analysis_raw = None
-if "unlocked" not in st.session_state:
-    st.session_state.unlocked = False
+if "analysis_result" not in st.session_state:
+    st.session_state.analysis_result = None
 
-st.title("🧠 Strategic Logic Engine")
-st.caption("Cognicull-inspired Learning System")
+st.title("🔗 Strategic Knowledge Architecture")
+st.caption("理解の依存関係を可視化し、知識の『系譜』をスキャンする")
 
-# --- 2. 検索・解析実行 ---
-query = st.text_input("解体したい専門用語を入力:", placeholder="例: T細胞, CD45, ZAP-70...")
+# --- 解析実行 ---
+query = st.text_input("整理・解体したい概念を入力:", placeholder="例: CD45のフォスファターゼ活性, ZAP-70のリン酸化...")
 
-if st.button("ACTIVATE SCAN"):
-    with st.spinner("AI参謀が構造化データを構築中..."):
-        # Tavily検索 (生データの取得)
-        search_res = tavily.search(query=query, search_depth="advanced", max_results=5)
+if st.button("VISUALIZE GENEALOGY"):
+    with st.spinner("AI参謀が深層解析を実行中..."):
+        # 検索の深化
+        search_res = tavily.search(query=f"{query} biological mechanism prerequisite basis detail", search_depth="advanced", max_results=10)
         context = "\n".join([r['content'] for r in search_res['results']])
 
-        # OpenAI解析 (構造を厳密に指定)
+        # プロンプトの最適化（miniモデル用）
         prompt = f"""
-        「{query}」を解析し、以下の4つのブロックのみを出力せよ。余計な挨拶や説明は一切不要。
-        
-        @@@MAP
-        mindmap
-          root(({query}))
-            Lv1_Basic
-              Lv3_Mechanism
-                Lv5_Industrial_Issue
-        
-        @@@LV1
-        (中学生向けの比喩での一文解説)
-        
-        @@@LV3
-        (専門的な分子メカニズムの解説)
-        
-        @@@LV5
-        (Cellares等の製造現場での実戦的課題)
-        
+        「{query}」について、以下の2つのセクションで構成されるレポートを生成せよ。
+
+        ### SECTION 1: MAP_DATA
+        以下の形式のみで出力せよ。
+        PRE:単語:一言役割
+        POST:単語:一言メリット
+
+        ### SECTION 2: DEEP_DETAIL
+        「{query}」そのものについて、長くてもいいので正確かつ詳細に解説せよ。
+        1. 根本的な定義と生物学的役割
+        2. 信号伝達における具体的なメカニズム
+        3. 実務（製造・臨床）における重要性とボトルネック
+        4. 今後の課題や議論されている点
+
         Context: {context}
         """
         response = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
-        st.session_state.analysis_raw = response.choices[0].message.content
-        st.session_state.unlocked = False
+        st.session_state.analysis_result = response.choices[0].message.content
 
-# --- 3. 描画とロジック ---
-if st.session_state.analysis_raw:
-    raw = st.session_state.analysis_raw
+# --- 画面表示 ---
+if st.session_state.analysis_result:
+    res = st.session_state.analysis_result
     
+    # データの分割
     try:
-        # 文字列を分割
-        map_code = raw.split("@@@MAP")[1].split("@@@LV1")[0].strip()
-        lv1_detail = raw.split("@@@LV1")[1].split("@@@LV3")[0].strip()
-        lv3_detail = raw.split("@@@LV3")[1].split("@@@LV5")[0].strip()
-        lv5_detail = raw.split("@@@LV5")[1].strip()
+        parts = res.split("### SECTION 2: DEEP_DETAIL")
+        map_lines = parts[0].replace("### SECTION 1: MAP_DATA", "").strip().split('\n')
+        detail_text = parts[1].strip()
 
-        # マインドマップ描画
-        st.subheader("🌐 Strategic Map Scan")
-        m_html = f"""
-        <div class="mermaid" style="background-color: #0e1117;">
-        {map_code}
-        </div>
-        <script type="module">
-            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-            mermaid.initialize({{ startOnLoad: true, theme: 'dark', securityLevel: 'loose' }});
-        </script>
-        """
-        components.html(m_html, height=450)
+        # --- A. 知識系譜図 (Graphviz) ---
+        st.subheader(f"🌐 Knowledge Genealogy: {query}")
+        dot = graphviz.Digraph()
+        dot.attr(rankdir='LR', bgcolor='#0e1117')
+        dot.attr('node', fontname='IPAGothic', fontcolor='white', style='filled', shape='record')
 
+        # ターゲットノード
+        dot.node('root', f"{{ TARGET | {query} }}", fillcolor='#d53e4f', fontsize='16')
+
+        for line in map_lines:
+            if ':' in line:
+                elements = line.split(':')
+                if len(elements) >= 3:
+                    direction, label, desc = elements[0], elements[1], elements[2]
+                    color = '#1f78b4' if 'PRE' in direction else '#2ca25f'
+                    
+                    dot.node(label, f"{{ {label} | {desc} }}", fillcolor=color)
+                    
+                    if 'PRE' in direction:
+                        dot.edge(label, 'root', color='white')
+                    else:
+                        dot.edge('root', label, color='white')
+
+        st.graphviz_chart(dot)
+
+        # --- B. 詳細解説セクション ---
         st.divider()
-        with st.expander("✅ Lv1: 基礎の本質 (開示中)"):
-            st.info(lv1_detail)
-
-        # 論理ゲート
-        if not st.session_state.unlocked:
-            st.warning("🔒 専門メカニズム(Lv3)を解禁するには、この概念の繋がりを自力で説明してください。")
-            if st.button("自分の言葉で理解した（解禁する）"):
-                st.session_state.unlocked = True
-                st.rerun()
-        else:
-            with st.expander("✅ Lv3: 専門メカニズム (解禁済み)"):
-                st.write(lv3_detail)
-            with st.expander("🚀 Lv5: 製造現場・企業の課題"):
-                st.write(lv5_detail)
-    
+        st.subheader(f"📖 Deep Intelligence: {query}")
+        st.markdown(detail_text)
+        
     except Exception as e:
-        st.error(f"解析フォーマットエラーが発生しました。再度スキャンしてください。")
-        st.write("Debug info:", raw) # 万が一のためにAIの回答をそのまま出す
+        st.error("解析データの分離に失敗しました。もう一度実行してください。")import streamlit as st
+from openai import OpenAI
+from tavily import TavilyClient
+import graphviz
+
+# --- 初期設定 ---
+st.set_page_config(page_title="Strategic Knowledge Architecture", layout="wide")
+
+# Secretsの確認
+if "OPENAI_API_KEY" not in st.secrets or "TAVILY_API_KEY" not in st.secrets:
+    st.error("Secrets (OPENAI_API_KEY / TAVILY_API_KEY) を設定してください。")
+    st.stop()
+
+tavily = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+if "analysis_result" not in st.session_state:
+    st.session_state.analysis_result = None
+
+st.title("🔗 Strategic Knowledge Architecture")
+st.caption("理解の依存関係を可視化し、知識の『系譜』をスキャンする")
+
+# --- 解析実行 ---
+query = st.text_input("整理・解体したい概念を入力:", placeholder="例: CD45のフォスファターゼ活性, ZAP-70のリン酸化...")
+
+if st.button("VISUALIZE GENEALOGY"):
+    with st.spinner("AI参謀が深層解析を実行中..."):
+        # 検索の深化
+        search_res = tavily.search(query=f"{query} biological mechanism prerequisite basis detail", search_depth="advanced", max_results=10)
+        context = "\n".join([r['content'] for r in search_res['results']])
+
+        # プロンプトの最適化（miniモデル用）
+        prompt = f"""
+        「{query}」について、以下の2つのセクションで構成されるレポートを生成せよ。
+
+        ### SECTION 1: MAP_DATA
+        以下の形式のみで出力せよ。
+        PRE:単語:一言役割
+        POST:単語:一言メリット
+
+        ### SECTION 2: DEEP_DETAIL
+        「{query}」そのものについて、長くてもいいので正確かつ詳細に解説せよ。
+        1. 根本的な定義と生物学的役割
+        2. 信号伝達における具体的なメカニズム
+        3. 実務（製造・臨床）における重要性とボトルネック
+        4. 今後の課題や議論されている点
+
+        Context: {context}
+        """
+        response = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
+        st.session_state.analysis_result = response.choices[0].message.content
+
+# --- 画面表示 ---
+if st.session_state.analysis_result:
+    res = st.session_state.analysis_result
+    
+    # データの分割
+    try:
+        parts = res.split("### SECTION 2: DEEP_DETAIL")
+        map_lines = parts[0].replace("### SECTION 1: MAP_DATA", "").strip().split('\n')
+        detail_text = parts[1].strip()
+
+        # --- A. 知識系譜図 (Graphviz) ---
+        st.subheader(f"🌐 Knowledge Genealogy: {query}")
+        dot = graphviz.Digraph()
+        dot.attr(rankdir='LR', bgcolor='#0e1117')
+        dot.attr('node', fontname='IPAGothic', fontcolor='white', style='filled', shape='record')
+
+        # ターゲットノード
+        dot.node('root', f"{{ TARGET | {query} }}", fillcolor='#d53e4f', fontsize='16')
+
+        for line in map_lines:
+            if ':' in line:
+                elements = line.split(':')
+                if len(elements) >= 3:
+                    direction, label, desc = elements[0], elements[1], elements[2]
+                    color = '#1f78b4' if 'PRE' in direction else '#2ca25f'
+                    
+                    dot.node(label, f"{{ {label} | {desc} }}", fillcolor=color)
+                    
+                    if 'PRE' in direction:
+                        dot.edge(label, 'root', color='white')
+                    else:
+                        dot.edge('root', label, color='white')
+
+        st.graphviz_chart(dot)
+
+        # --- B. 詳細解説セクション ---
+        st.divider()
+        st.subheader(f"📖 Deep Intelligence: {query}")
+        st.markdown(detail_text)
+        
+    except Exception as e:
+        st.error("解析データの分離に失敗しました。もう一度実行してください。")
