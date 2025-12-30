@@ -92,9 +92,9 @@ if st.session_state.analysis_result:
         
     except Exception as e:
         st.error("解析データの分離に失敗しました。もう一度実行してください。")import streamlit as st
-from openai import OpenAI
-from tavily import TavilyClient
-import graphviz
+        from openai import OpenAI
+        from tavily import TavilyClient
+        import graphviz
 
 # --- 初期設定 ---
 st.set_page_config(page_title="Strategic Knowledge Architecture", layout="wide")
